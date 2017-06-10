@@ -1,5 +1,12 @@
 context("Test funData methods")
 
+test_that("print",{
+  f1 <- funData(argvals = 1:5, X = matrix(1:20, nrow = 4))
+  expect_output(print(f1), file = "tests/outputs/funData.out")
+  expect_output(print(multiFunData(f1)), file = "tests/outputs/multiFunData.out")
+  expect_output(print(as.irregFunData(f1)), file = "tests/outputs/irregFunData.out")
+})
+
 test_that("dimSupp", {
   f1 <- funData(argvals = 1:5, X = matrix(1:20, nrow = 4))
   f2 <- funData(argvals = list(1:5, 6:10), X = array(100, c(4, 5, 5)))
@@ -56,6 +63,7 @@ test_that("nObsPoints", {
 test_that("extractObs", {
   f1 <- funData(argvals = 1:5, X = matrix(1:20, nrow = 4))
   f2 <- funData(argvals = list(1:5, 1:6), X = array(1:120, c(4, 5, 6)))
+  f3 <- funData(argvals = list(1:5, 1:6, 1:4), X = array(1:480, c(4, 5, 6, 4)))
   m1 <- multiFunData(list(f1, f2))
   i1 <- irregFunData(argvals = list(1:5, 1:3), X = list(2:6, 2:4))
   
@@ -90,6 +98,9 @@ test_that("extractObs", {
   # univariate FDobject (two-dim)
   expect_equal(extractObs(f2, obs = 2),  funData(argvals = list(1:5, 1:6), X = array(1:120, c(4, 5, 6))[2, , , drop = FALSE]))
   expect_equal(extractObs(f2, argvals = list(1:3, 4:6)), funData(argvals = list(1:3, 4:6), X = array(1:120, c(4, 5, 6))[, 1:3, 4:6]))
+  # univariate FDobject (three-dim)
+  expect_equal(extractObs(f3, obs = 4),  funData(argvals = f3@argvals, X = f3@X[4, , , , drop = FALSE]))
+  expect_equal(extractObs(f3, argvals = list(1:3, 4:6, 2:4)), funData(argvals = list(1:3, 4:6, 2:4), X = f3@X[, 1:3, 4:6, 2:4]))
   # multivariate FD object
   expect_equal(extractObs(m1, obs = 2), multiFunData(extractObs(m1[[1]], obs = 2), extractObs(m1[[2]], obs = 2)))  
   # irreg FD object
@@ -181,6 +192,31 @@ test_that("Arith", {
   expect_equal(i1/i1, 1 + i1*0)   
 })
 
+
+test_that("Math", {
+  set.seed(1)
+  
+  argvals <- seq(0,1, 0.01)
+  
+  # funData
+  f <- simFunData(argvals = argvals, N = 10, M = 5, eFunType = "Fourier", eValType = "linear")$simData
+
+  expect_equal(exp(f), funData(argvals, exp(f@X)))
+  expect_equal(sin(f)^2 + cos(f)^2, 0*f+1) # combination of Arith and math
+  
+  # irregFunData
+  i <- as.irregFunData(sparsify(f, minObs = 5, maxObs = 10))
+  
+  expect_equal(exp(i), irregFunData(i@argvals, lapply(i@X,exp)))
+  expect_equal(sin(i)^2 + cos(i)^2, 0*i+1) # combination of Arith and math
+  
+  # multiFunData
+  m <- multiFunData(f, -1*f)
+  
+  expect_equal(exp(m), multiFunData(exp(f), exp(-1*f)))
+  expect_equal(sin(m)^2 + cos(m)^2, 0*m+1) # combination of Arith and math
+})
+
 test_that("norm", {
   f1 <- funData(argvals = 1:5, X = matrix(1:20, nrow = 4))
   m1 <- multiFunData(f1,f1)
@@ -205,6 +241,39 @@ test_that("norm", {
   expect_equal(norm(i1, fullDom = TRUE), c(2/5, 1/80 + 2*13/96), tolerance = 1e-1) # result calculated explicitly
   expect_equal(norm(i1, weight = 2), 2*norm(i1)) # weight (makes little sense for univariate funData objects...)
 })
+
+
+test_that("scalarProduct", {
+  set.seed(1)
+  f <- simFunData(N = 5, M = 7, eValType = "linear",
+                  eFunType = "Fourier", argvals = seq(0,1,0.01))$simData
+  g <- simFunData(N = 5, M = 4, eValType = "linear",
+                  eFunType = "Poly", argvals = seq(0,1,0.01))$simData
+  m <- multiFunData(f,g)
+  i <- as.irregFunData(sparsify(f, minObs = 5, maxObs = 10))
+  
+  # Check errors
+  expect_error(scalarProduct(m, as.multiFunData(f)),
+               "multiFunData objects must have the same number of elements.")
+  
+  expect_error(scalarProduct(m, m, weight = c(-1,1)),
+               "Weights must be non-negative.")
+  
+  expect_error(scalarProduct(m, m, weight = c(0,0)),
+               "At least one weighting factor must be different from 0.")
+  
+  # Check functionality:
+  # univariate FD objects
+  s <- scalarProduct(f,g)
+  expect_equal(length(s), nObs(f))
+  expect_equal(s[1], 0.68327608)
+  expect_equal(scalarProduct(f,f), norm(f, squared = TRUE))
+  # multivariate FD object
+  expect_equal(scalarProduct(m,m), norm(m, squared = TRUE))
+  expect_equal(scalarProduct(m,m, weight = c(1,2)), norm(m, squared = TRUE, weight = c(1,2))) # with weights
+  # irreg FD object  
+  expect_equal(scalarProduct(i,i), norm(i, squared = TRUE))
+  })
 
 test_that("integrate", {
   f1 <- funData(argvals = 1:5, X = matrix(1:20, nrow = 4))
@@ -297,6 +366,9 @@ test_that("set/get", {
   # irreg FD object
   expect_equal(getArgvals(setArgvals(i1, list(0:4,0:2))), list(0:4, 0:2))
   expect_equal(getX(setX(i1, list(0:4,0:2))), list(0:4, 0:2))
+  
+  # check multivariate functions with one element
+  expect_equal(getArgvals(f1), getArgvals(as.multiFunData(f1))[[1]])
 })
 
 test_that("flipFun", {
@@ -368,6 +440,11 @@ test_that("meanFunction",{
   expect_equal(meanFunction(i1), extractObs(i1, 2))
  })
 
+test_that("expand.int",{
+  expect_null(expand.int())
+  expect_equal(expand.int(2,5), data.frame(Var1 = rep(1:2, each = 5), Var2 = rep(1:5, times = 2)))
+}
+          )
 
 test_that("tensorProduct",{
   x <- seq(0, 2*pi, 0.1)
@@ -386,8 +463,8 @@ test_that("tensorProduct",{
  expect_equal(dimSupp(TP1), 2)
  expect_equal(TP1@argvals, list(f1@argvals[[1]], f2@argvals[[1]]))
  expect_equal(nObs(TP1), nObs(f1)*nObs(f2))
- expect_equal(mean(TP1@X[1,-1,]/TP1@X[2,-1,]), 0.88235294)
- expect_equal(sum(var(TP1@X[1,-1,]/TP1@X[2,-1,])), 0)
+ expect_equal(mean(TP1@X[1,-1,]/TP1@X[7,-1,]), 0.88235294) # what was 2nd before now is 7th
+ expect_equal(sum(var(TP1@X[1,-1,]/TP1@X[7,-1,])), 0)
  
  # tensor product of three functions
  TP2 <- tensorProduct(f1, f2, f1)
@@ -398,4 +475,12 @@ test_that("tensorProduct",{
  expect_equal(sum(var(TP2@X[1,-1,-1,-1]/TP2@X[2,-1,-1,-1])), 0)
  })
 
-
+test_that("approxNA",{
+  x <- seq(0, 2*pi, 0.1)
+  f1 <- funData(x, outer(seq(0.75, 1.25, 0.1), x)) # linear functions
+  
+  set.seed(1)
+  expect_equal(integrate(f1 - as.irregFunData(approxNA(sparsify(f1, minObs = 5, maxObs = 8)))),
+               rep(0, nObs(f1)))
+  
+})
