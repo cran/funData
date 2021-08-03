@@ -1,3 +1,14 @@
+# funData 1.3-7
+
+## New features
+* Fixing URLs as required by CRAN.
+
+
+# funData 1.3-6
+
+## New features
+* Changing email address.
+
 # funData 1.3-5
 
 ## New features
